@@ -1,19 +1,42 @@
-
 name: Trigger Trading Endpoint
 on:
   schedule:
-    - cron: '*/2 3-10 * * 1-5'  # Every 2 minutes, 3:30 AM–10:00 AM UTC (9:00 AM–3:30 PM IST), Mon–Fri
-  workflow_dispatch:  # Allows manual triggering for testing
+    - cron: '0,15,30,45 3-10 * * 1-5'  # At 0, 15, 30, 45 minutes, 3:30 AM–10:00 AM UTC (9:00 AM–3:30 PM IST), Mon–Fri
+  workflow_dispatch:  # Manual trigger for testing
 jobs:
   trigger-trading:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read  # Required for scheduled workflows
     steps:
-      - name: Send HTTP request to run-trading
+      - name: Log workflow context
         run: |
-          curl -X GET "https://advance-pdf-cleaning-agent.onrender.com/run-trading" \
+          echo "Workflow triggered at $(date -u)"
+          echo "Event: ${{ github.event_name }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref }}"
+      - name: Wake Render app
+        run: |
+          curl -X GET "https://advance-pdf-cleaning-agent.onrender.com/health" \
           -H "User-Agent: GitHub-Actions-Trading" \
           -w "\nHTTP Status: %{http_code}\n" \
-          -o response.txt
+          -o health_response.txt
+          echo "Health check response:"
+          cat health_response.txt
+      - name: Send HTTP request to run-trading
+        run: |
+          for attempt in {1..3}; do
+            curl -X GET "https://advance-pdf-cleaning-agent.onrender.com/run-trading" \
+            -H "User-Agent: GitHub-Actions-Trading" \
+            -w "\nHTTP Status: %{http_code}\n" \
+            -o response.txt
+            if grep -q "HTTP Status: 200" response.txt; then
+              echo "Request succeeded"
+              break
+            fi
+            echo "Attempt $attempt failed, retrying in 5 seconds..."
+            sleep 5
+          done
       - name: Log response
         run: |
           echo "Response from /run-trading:"
