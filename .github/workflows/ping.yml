@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Send HTTP request to run-trading
         run: |
-          curl -X GET "https://your-app.onrender.com/run-trading" \
+          curl -X GET "https://advance-pdf-cleaning-agent.onrender.com/run-trading" \
           -H "User-Agent: GitHub-Actions-Trading" \
           -w "\nHTTP Status: %{http_code}\n" \
           -o response.txt
