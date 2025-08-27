@@ -1,13 +1,14 @@
+
 name: Trigger Trading Endpoint
 on:
   schedule:
-    - cron: '0,15,30,45 3-10 * * 1-5'  # At 0, 15, 30, 45 minutes, 3:30 AM–10:00 AM UTC (9:00 AM–3:30 PM IST), Mon–Fri
-  workflow_dispatch:  # Manual trigger for testing
+    - cron: '*/2 * * * 1-5'  # Every 5 minutes on weekdays (for testing; revert to original after)
+  workflow_dispatch:
 jobs:
   trigger-trading:
     runs-on: ubuntu-latest
     permissions:
-      contents: read  # Required for scheduled workflows
+      contents: read
     steps:
       - name: Log workflow context
         run: |
@@ -15,17 +16,32 @@ jobs:
           echo "Event: ${{ github.event_name }}"
           echo "Repository: ${{ github.repository }}"
           echo "Branch: ${{ github.ref }}"
+      - name: Wait 10 seconds
+        run: |
+          echo "Waiting 10 seconds to align with :10 past minute"
+          sleep 10
       - name: Wake Render app
         run: |
-          curl -X GET "https://advance-pdf-cleaning-agent.onrender.com/health" \
-          -H "User-Agent: GitHub-Actions-Trading" \
-          -w "\nHTTP Status: %{http_code}\n" \
-          -o health_response.txt
+          for attempt in {1..3}; do
+            echo "Attempt $attempt to wake Render app"
+            curl -X GET "https://advance-pdf-cleaning-agent.onrender.com/health" \
+            -H "User-Agent: GitHub-Actions-Trading" \
+            -w "\nHTTP Status: %{http_code}\n" \
+            -o health_response.txt
+            if grep -q "HTTP Status: 200" health_response.txt; then
+              echo "Health check succeeded"
+              break
+            fi
+            echo "Attempt $attempt failed, retrying in 5 seconds..."
+            sleep 5
+          done
           echo "Health check response:"
           cat health_response.txt
+        continue-on-error: true
       - name: Send HTTP request to run-trading
         run: |
           for attempt in {1..3}; do
+            echo "Attempt $attempt to run trading"
             curl -X GET "https://advance-pdf-cleaning-agent.onrender.com/run-trading" \
             -H "User-Agent: GitHub-Actions-Trading" \
             -w "\nHTTP Status: %{http_code}\n" \
@@ -37,13 +53,25 @@ jobs:
             echo "Attempt $attempt failed, retrying in 5 seconds..."
             sleep 5
           done
-      - name: Log response
-        run: |
           echo "Response from /run-trading:"
           cat response.txt
       - name: Check for failure
         run: |
-          if ! grep -q "Trading logic executed\|Outside trading hours" response.txt; then
-            echo "Error: Unexpected response from /run-trading"
+          if ! grep -q "HTTP Status: 200" response.txt; then
+            echo "Error: All retry attempts failed for /run-trading"
+            echo "Full response:"
+            cat response.txt
             exit 1
           fi
+          if ! grep -q "Trading logic executed\|Outside trading hours" response.txt; then
+            echo "Error: Unexpected response from /run-trading"
+            echo "Full response:"
+            cat response.txt
+            exit 1
+          fi
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Workflow failed, notifying team..."
+          # Add notification logic here, e.g., Slack or email
+          # Example: curl -X POST -H 'Content-type: application/json' --data '{"text":"Workflow failed in ${{ github.repository }}"}' $SLACK_WEBHOOK_URL
