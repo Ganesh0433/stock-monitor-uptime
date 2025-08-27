@@ -1,1 +1,26 @@
 
+name: Trigger Trading Endpoint
+on:
+  schedule:
+    - cron: '*/2 3-10 * * 1-5'  # Every 2 minutes, 3:30 AM–10:00 AM UTC (9:00 AM–3:30 PM IST), Mon–Fri
+  workflow_dispatch:  # Allows manual triggering for testing
+jobs:
+  trigger-trading:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send HTTP request to run-trading
+        run: |
+          curl -X GET "https://your-app.onrender.com/run-trading" \
+          -H "User-Agent: GitHub-Actions-Trading" \
+          -w "\nHTTP Status: %{http_code}\n" \
+          -o response.txt
+      - name: Log response
+        run: |
+          echo "Response from /run-trading:"
+          cat response.txt
+      - name: Check for failure
+        run: |
+          if ! grep -q "Trading logic executed\|Outside trading hours" response.txt; then
+            echo "Error: Unexpected response from /run-trading"
+            exit 1
+          fi
